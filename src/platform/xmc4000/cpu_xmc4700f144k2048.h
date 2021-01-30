@@ -3,6 +3,7 @@
 #define __CPU_XMC4700F144K2048_H__
 
 #include "stacks.h"
+#include "DAVE.h"
 
 // Number of resources (0 if not available/not implemented)
 #define NUM_PIO               16
@@ -12,9 +13,10 @@
 #define NUM_PWM               0
 #define NUM_ADC               0
 #define NUM_CAN               0
+#define NUM_DAC               2
 
 // CPU frequency (needed by the CPU module and MMCFS code, 0 if not used)
-#define CPU_FREQUENCY         120000000
+#define CPU_FREQUENCY         144000000
 
 // PIO prefix ('0' for P0, P1, ... or 'A' for PA, PB, ...)
 #define PIO_PREFIX            '0'
@@ -38,5 +40,10 @@
 #define INTERNAL_RAM2_LAST_FREE  ( DSRAM2_BASE + DSRAM2_SIZE - 1 )
 #define INTERNAL_RAM3_FIRST_FREE PSRAM_BASE
 #define INTERNAL_RAM3_LAST_FREE  ( PSRAM_BASE + PSRAM_SIZE - 1 )
+
+// Internal Flash data: Organization: 2MBytes.
+#define INTERNAL_FLASH_SIZE             ( 2048 * 1024 )
+#define INTERNAL_FLASH_SECTOR_ARRAY     { 16384, 16384, 16384, 16384, 16384, 16384, 16384, 16384, 131072, 262144, 262144, 262144, 262144, 262144, 262144, 262144 }
+#define INTERNAL_FLASH_START_ADDRESS    0x08000000
 
 #endif // #ifndef __CPU_XMC4700F144K2048_H__

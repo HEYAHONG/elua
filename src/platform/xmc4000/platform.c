@@ -13,67 +13,99 @@
 #include "utils.h"
 #include "common.h"
 #include "platform_conf.h"
+#include "dwt.h"
 
 // Platform includes
 #include "DAVE.h"
-#include "uart.h"
-#include "xmc_elua.h"
 
-#define SYSTICKHZ             10
-#define SYSTICKMS             ( 1000 / SYSTICKHZ )
+#if defined ( XMC4500_F144k1024 )
+# include "XMC4500.h"
+#endif
 
-#define SYSTM001_SYS_CORE_CLOCK  120U 
-#define SYSTM001_SYSTICK_INTERVAL SYSTICKMS
+#if defined ( XMC4700_F144x2048 )
+# include "XMC4700.h"
+#endif
 
-/*
- * Don't know why - the compiler complains that
- * _init doesn't exist. I define the symbol now
- * so he stops nagging me.
- */
-void _init (void)
-{
+#if defined ( XMC4300_F100x256 )
+# include "XMC4300.h"
+#endif
 
-}
+// Peripheral includes
+#include "xmc_dac.h"
 
 // Handles uart receive
 uint8_t recv_byte;
 
 // ****************************************************************************
+// Function references
+
+extern void ebu_main( void );
+
+// Cleanup later: This should in theory be in inc/platform.h
+void dacs_init( void );
+
+// ****************************************************************************
 // Platform initialization
 
-extern void ebu_main (void);
+/*
+ * Don't know why - the compiler complains that _init doesn't exist. I define the
+ * symbol now so he stops nagging me.
+ */
+void _init (void)
+{
+}
 
+/* Main platform initialization */
 int platform_init()
 {
   DAVE_Init();
+
   cmn_platform_init();
-
-  // Setup system timer
-  cmn_systimer_set_base_freq( SYSTM001_SYS_CORE_CLOCK * 1000000 );
-  cmn_systimer_set_interrupt_freq( SYSTICKHZ );
-
-  SysTick_Config((uint32_t)(SYSTM001_SYSTICK_INTERVAL * SYSTM001_SYS_CORE_CLOCK * 1000U));
-  NVIC_SetPriority(SysTick_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),10,0));
 
   /* Initialize the EBU if we're using the XMC45 SDRAM kit */
 #if defined ( XMC4500_E144x1024 )
   ebu_main();
 #endif
 
+  /* DAC */
+  dacs_init();
+
   return PLATFORM_OK;
 }
-
 
 // ****************************************************************************
 // PIO
 
-#if defined ( XMC4400_F100x512 )
+#if defined ( ELUA_CPU_XMC4700F144K2048 ) ||\
+    defined ( ELUA_CPU_XMC4500F144K1024 ) ||\
+    defined ( ELUA_CPU_XMC4500E144K1024 )
 
-static PORT_Type* const pio_port[] = { PORT_0, PORT_1, PORT_2, PORT_3, PORT_4, PORT_5, PORT_14, PORT_15 };
+static XMC_GPIO_PORT_t *const pio_port[] =
+{
+  XMC_GPIO_PORT0,
+  XMC_GPIO_PORT1,
+  XMC_GPIO_PORT2,
+  XMC_GPIO_PORT3,
+  XMC_GPIO_PORT4,
+  XMC_GPIO_PORT5,
+  XMC_GPIO_PORT6,
+  XMC_GPIO_PORT14,
+  XMC_GPIO_PORT15
+};
 
-#else
+#elif defined ( ELUA_CPU_XMC4300F100K256 )
 
-static PORT_Type* const pio_port[] = { PORT_0, PORT_1, PORT_2, PORT_3, PORT_4, PORT_5, PORT_6, PORT_14, PORT_15 };
+static XMC_GPIO_PORT_t *const pio_port[] =
+{
+  XMC_GPIO_PORT0,
+  XMC_GPIO_PORT1,
+  XMC_GPIO_PORT2,
+  XMC_GPIO_PORT3,
+  XMC_GPIO_PORT4,
+  XMC_GPIO_PORT5,
+  XMC_GPIO_PORT14,
+  XMC_GPIO_PORT15
+};
 
 #endif
 
@@ -81,20 +113,20 @@ static void platformh_setup_pins( unsigned port, pio_type pinmask, u8 mask )
 {
   unsigned i;
   u8 shift;
-  PORT_Type* base = pio_port[ port ];
+  XMC_GPIO_PORT_t *base = pio_port[ port ];
 
   for( i = 0; i < platform_pio_get_num_pins( port ); i ++ )
     if( pinmask & ( 1 << i ) )
     {
       shift = ( i & 3 ) << 3;
-      base->IOCRS[ i >> 2 ] = ( base->IOCRS[ i >> 2 ] & ~( 0xFF << shift ) ) | ( mask << shift );
+      base->IOCR[ i >> 2 ] = ( base->IOCR[ i >> 2 ] & ~( 0xFF << shift ) ) | ( mask << shift );
     }
 }
 
 pio_type platform_pio_op( unsigned port, pio_type pinmask, int op )
 {
   pio_type retval = 1;
-  PORT_Type* base = pio_port[ port ];
+  XMC_GPIO_PORT_t *base = pio_port[ port ];
 
   switch( op )
   {
@@ -111,8 +143,8 @@ pio_type platform_pio_op( unsigned port, pio_type pinmask, int op )
       break;
 
     case PLATFORM_IO_PORT_DIR_INPUT:
-      base->IOCRS[ 0 ] = base->IOCRS[ 1 ] = 0;
-      base->IOCRS[ 2 ] = base->IOCRS[ 3 ] = 0;
+      base->IOCR[ 0 ] = base->IOCR[ 1 ] = 0;
+      base->IOCR[ 2 ] = base->IOCR[ 3 ] = 0;
       break;
 
     case PLATFORM_IO_PIN_DIR_INPUT:
@@ -121,8 +153,8 @@ pio_type platform_pio_op( unsigned port, pio_type pinmask, int op )
       break;
 
     case PLATFORM_IO_PORT_DIR_OUTPUT:
-      base->IOCRS[ 0 ] = base->IOCRS[ 1 ] = 0x80808080;
-      base->IOCRS[ 2 ] = base->IOCRS[ 3 ] = 0x80808080;
+      base->IOCR[ 0 ] = base->IOCR[ 1 ] = 0x80808080;
+      base->IOCR[ 2 ] = base->IOCR[ 3 ] = 0x80808080;
       break;
 
     case PLATFORM_IO_PIN_DIR_OUTPUT:
@@ -152,11 +184,8 @@ pio_type platform_pio_op( unsigned port, pio_type pinmask, int op )
   return retval;
 }
 
-/* void SysTick_Handler( void )
-{
-  // Handle system timer call
-  cmn_systimer_periodic();
-  } */
+// ****************************************************************************
+// Timer
 
 u64 platform_timer_sys_raw_read()
 {
@@ -178,20 +207,36 @@ timer_data_type platform_timer_read_sys()
   return cmn_systimer_get();
 }
 
-
 timer_data_type platform_s_timer_op( unsigned id, int op,timer_data_type data )
 {
   return 0;
 }
 
+// ****************************************************************************
+// UART
+
+void elua_uart_rx_callback( void )
+{
+  // Empty for now.
+}
+
+void elua_uart_tx_callback( void )
+{
+  // Empty for now.
+}
+
 void platform_s_uart_send( unsigned id, u8 data )
 {
+  // Internally invokes DMA for transmit
   UART_Transmit( &UART_0, &data, 1 );
+  while( UART_0.runtime->tx_busy );
 }
 
 int platform_s_uart_recv( unsigned id, timer_data_type timeout )
 {
+  // Internally invokes DMA for receive
   UART_Receive( &UART_0, &recv_byte, 1 );
+  while( UART_0.runtime->rx_busy );
   return recv_byte;
 }
 
@@ -205,7 +250,12 @@ u32 platform_uart_setup( unsigned id, u32 baud, int databits, int parity, int st
   return 0;
 }
 
-void platform_s_timer_delay( unsigned id, timer_data_type delay_us )
+// ****************************************************************************
+// DAC
+
+void dacs_init( void )
 {
+  /* SCU: Enable the DAC peripheral */
+  XMC_DAC_Enable( (XMC_DAC_t  *)(void *)DAC );
 }
 
